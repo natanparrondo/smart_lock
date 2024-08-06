@@ -13,4 +13,7 @@ class TextStyles {
 
   static TextStyle normalText =
       TextStyle(fontFamily: fontFamily, color: Colors.white.withOpacity(0.8));
+
+  static TextStyle normalTextBold =
+      TextStyle(fontFamily: fontFamily, color: Colors.white);
 }

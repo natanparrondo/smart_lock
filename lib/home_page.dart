@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Import for HapticFeedback
+import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_lock/theme/font_styles.dart';
-import 'package:smart_lock/settings_page.dart'; // Import your SettingsPage widget
 import 'dart:ui' as ui; // Import for BackdropFilter
 
 class HomePage extends StatefulWidget {
@@ -19,6 +18,8 @@ class HomePageState extends State<HomePage>
   bool isAuthenticated = false;
   bool isAuthenticating = false;
   bool _locked = true;
+  bool _isButtonPressed = false;
+  double _scale = 1.0;
 
   @override
   void initState() {
@@ -54,7 +55,6 @@ class HomePageState extends State<HomePage>
   Future<void> clearAllPreferences() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.clear();
-    // SystemChannels.platform.invokeMethod<void>('SystemNavigator.pop');
   }
 
   @override
@@ -63,18 +63,18 @@ class HomePageState extends State<HomePage>
       appBar: isAuthenticated
           ? AppBar(
               backgroundColor: Theme.of(context).colorScheme.secondary,
-              title: Text("Smart Lock", style: TextStyles.normalText),
-              centerTitle: true,
-              leading: Icon(
-                Icons.circle,
-                // Navigate to SettingsPage
+              title: Text(
+                "Smart Lock",
+                style: TextStyles.heading1,
               ),
+              centerTitle: true,
+              leading: Icon(Icons.wifi_tethering),
               actions: [
                 IconButton(
                   onPressed: () {
                     Navigator.of(context).pushNamed('/settings');
                   },
-                  icon: Icon(Icons.settings),
+                  icon: Icon(Icons.settings_outlined),
                 )
               ],
             )
@@ -86,32 +86,49 @@ class HomePageState extends State<HomePage>
             visible: isAuthenticated,
             child: Center(
               child: GestureDetector(
-                onLongPress: () {
+                onTapDown: (_) {
                   setState(() {
+                    _isButtonPressed = true;
+                    _scale = 0.9;
+                  });
+                },
+                onTapUp: (_) {
+                  setState(() {
+                    _isButtonPressed = false;
+                    _scale = 1.0;
                     _locked = !_locked;
+                  });
+                },
+                onTapCancel: () {
+                  setState(() {
+                    _isButtonPressed = false;
+                    _scale = 1.0;
                   });
                 },
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    AnimatedSwitcher(
-                      duration: Duration(milliseconds: 150),
-                      switchInCurve: Curves.easeIn,
-                      switchOutCurve: Curves.easeInCirc,
-                      transitionBuilder:
-                          (Widget child, Animation<double> animation) {
-                        HapticFeedback.heavyImpact();
-                        return ScaleTransition(
-                          scale: animation,
-                          child: child,
-                        );
-                      },
-                      child: Image.asset(
-                        _locked
-                            ? 'lib/assets/locked.png'
-                            : 'lib/assets/unlocked.png',
-                        key: ValueKey<bool>(_locked),
-                        width: 150,
+                    Transform.scale(
+                      scale: _scale,
+                      child: AnimatedSwitcher(
+                        duration: Duration(milliseconds: 300),
+                        switchInCurve: Curves.easeIn,
+                        switchOutCurve: Curves.bounceIn,
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) {
+                          HapticFeedback.heavyImpact();
+                          return ScaleTransition(
+                            scale: animation,
+                            child: child,
+                          );
+                        },
+                        child: Image.asset(
+                          _locked
+                              ? 'lib/assets/locked.png'
+                              : 'lib/assets/unlocked.png',
+                          key: ValueKey<bool>(_locked),
+                          width: 150,
+                        ),
                       ),
                     ),
                     SizedBox(

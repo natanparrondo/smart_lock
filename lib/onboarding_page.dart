@@ -13,6 +13,9 @@ class OnboardingPage extends StatefulWidget {
   State<OnboardingPage> createState() => OnboardingPageState();
 }
 
+final TextEditingController _passwordController = TextEditingController();
+final TextEditingController _ssidController = TextEditingController();
+
 class OnboardingPageState extends State<OnboardingPage> {
   Future<void> _setAppBeenSetup(bool value) async {
     final prefs = await SharedPreferences.getInstance();
@@ -55,10 +58,14 @@ class OnboardingPageState extends State<OnboardingPage> {
     }
     if (authenticated) {
       await _setAppBeenSetup(true);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => HomePage()),
-      );
+      _nextStep();
     }
+  }
+
+  Future<void> _end() async {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => HomePage()),
+    );
   }
 
   @override
@@ -103,6 +110,8 @@ class OnboardingPageState extends State<OnboardingPage> {
         return _buildStep3();
       case 3:
         return _buildStep4();
+      case 4:
+        return _buildStep5();
       default:
         return _buildStep1();
     }
@@ -189,10 +198,6 @@ class OnboardingPageState extends State<OnboardingPage> {
       key: ValueKey(2),
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Image.asset(
-        //   'lib/assets/onboarding_biometric.png',
-        //   width: 250,
-        // ),
         SizedBox(height: 12),
         Text(
           textAlign: TextAlign.center,
@@ -207,31 +212,32 @@ class OnboardingPageState extends State<OnboardingPage> {
         ),
         SizedBox(height: 12),
         TextField(
-          // style: TextStyles.normalText,
-          keyboardType: TextInputType.name,
+          controller: _ssidController,
+          style: TextStyle(fontFamily: TextStyles.fontFamily),
+          keyboardType: TextInputType.text,
           autofocus: true,
           decoration: InputDecoration(
               label: Text(
                 "SSID (Nombre)",
-                style: TextStyles.normalText,
+                style: TextStyle(fontFamily: TextStyles.fontFamily),
               ),
               border: OutlineInputBorder()),
         ),
         SizedBox(height: 12),
-
         TextField(
-          //style: TextStyles.normalText,
+          controller: _passwordController,
           obscureText: true,
           decoration: InputDecoration(
             border: OutlineInputBorder(),
-            label: Text("Password"),
+            label: Text(
+              "Password",
+              style: TextStyle(fontFamily: TextStyles.fontFamily),
+            ),
           ),
         ),
-
         SizedBox(height: 12),
-
         TextButton.icon(
-          onPressed: _nextStep,
+          onPressed: _sendWifiData, // Updated to use function reference
           style: TextButton.styleFrom(
             textStyle: TextStyles.normalText,
             foregroundColor: Colors.white,
@@ -277,5 +283,45 @@ class OnboardingPageState extends State<OnboardingPage> {
         ),
       ],
     );
+  }
+
+  Widget _buildStep5() {
+    return Column(
+      key: ValueKey(4),
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Image.asset(
+          'lib/assets/onboarding_end.png',
+          width: 250,
+        ),
+        SizedBox(height: 12),
+        Text(
+          textAlign: TextAlign.center,
+          "Todo listo!",
+          style: TextStyles.heading1,
+        ),
+        SizedBox(height: 12),
+        Text(
+          textAlign: TextAlign.center,
+          "Termino el paso de configuración del dispositivo, ya puedes empezar a usarla. Puedes añadir tarjetas en la pantalla de configuración.",
+          style: TextStyles.normalText,
+        ),
+        SizedBox(height: 12),
+        TextButton.icon(
+          onPressed: _end,
+          label: Text("Finalizar"),
+          icon: Icon(Icons.check),
+          iconAlignment: IconAlignment.end,
+        ),
+      ],
+    );
+  }
+
+  void _sendWifiData() {
+    final String ssid = _ssidController.text;
+    final String password = _passwordController.text;
+    // Implement your logic to handle Wi-Fi credentials here
+    print('s;$ssid;$password');
+    _nextStep();
   }
 }
