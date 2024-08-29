@@ -1,9 +1,18 @@
+// home_page.dart
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:smart_lock/theme/font_styles.dart';
-import 'dart:ui' as ui; // Import for BackdropFilter
+import 'package:flutter_blue_plus/flutter_blue_plus.dart'; // Import the BLE library
+import 'package:smart_lock/functions/device_connection.dart'; // Import the DeviceConnection class
+import 'package:smart_lock/functions/sinric_requests.dart';
+import 'dart:ui' as ui;
+
+import 'package:smart_lock/theme/font_styles.dart'; // Import for BackdropFilter
+
+BluetoothDevice? _connectedDevice;
 
 class HomePage extends StatefulWidget {
   HomePage({super.key});
@@ -20,11 +29,130 @@ class HomePageState extends State<HomePage>
   bool _locked = true;
   bool _isButtonPressed = false;
   double _scale = 1.0;
+  int _selectedIndex = 0; // Default selection index for Wi-Fi
+  bool isConnected = false;
+
+  final DeviceConnection _deviceConnection =
+      DeviceConnection(); // Singleton instance
 
   @override
   void initState() {
     super.initState();
     _authenticate();
+    scanAndConnectToDevice();
+  }
+
+  Future<void> _handleLockToggle() async {
+    String _command = _locked ? "lock" : "unlock";
+    if (_selectedIndex == 0 || _deviceConnection.connectedDevice != null) {
+      //bt
+      print('Changing lock state over bt');
+      await _ToggleLockBluetooth(_command);
+    } else {
+      print('Device is not available.');
+      await _ToggleLockWiFi(_command);
+      _selectedIndex = 1;
+    }
+  }
+
+  Future<void> _ToggleLockWiFi(command) async {
+    await sendLockStateRequest(command);
+  }
+
+  Future<void> _ToggleLockBluetooth(command) async {
+    await _writeCharacteristic(command);
+  }
+
+  Future<void> scanAndConnectToDevice() async {
+    if (Platform.isAndroid) {
+      await FlutterBluePlus.turnOn(); // Request the user to turn on Bluetooth
+    }
+
+    bool isDeviceConnected = false;
+
+    try {
+      // Start scanning for devices with a 15-second timeout
+      await FlutterBluePlus.startScan(
+        timeout: Duration(seconds: 15),
+        withNames: ["MyESP32"], // Filter by device name
+      );
+
+      var subscription = FlutterBluePlus.scanResults.listen((results) async {
+        for (ScanResult result in results) {
+          if (result.advertisementData.localName == "MyESP32") {
+            BluetoothDevice device = result.device;
+            await FlutterBluePlus.stopScan();
+
+            try {
+              // Connect to the device using DeviceConnection
+              await DeviceConnection().connectToDevice(device);
+              DeviceConnection().connectedDevice?.state.listen((state) async {
+                if (state == BluetoothConnectionState.connected) {
+                  print('Connected to the device!');
+                  isDeviceConnected = true;
+                } else if (state == BluetoothConnectionState.disconnected) {
+                  print('Disconnected from the device!');
+                }
+              });
+            } catch (e) {
+              print('Failed to connect: $e');
+            }
+            break; // Exit the loop after finding the device
+          }
+        }
+      });
+
+      // Wait 15 seconds to allow the device to connect
+      await Future.delayed(Duration(seconds: 15));
+
+      if (!isDeviceConnected) {
+        await FlutterBluePlus.stopScan();
+        subscription.cancel();
+      }
+    } catch (e) {
+      print('Error during Bluetooth operations: $e');
+    } finally {
+      // Set the loading state or perform any cleanup tasks here if necessary
+    }
+  }
+
+  Future<String?> _getSavedDeviceModel() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('deviceModel');
+  }
+
+  void _loadDeviceModel() async {
+    String? deviceModel = await _getSavedDeviceModel();
+    if (deviceModel != null) {
+      // Try to reconnect using the device model name
+      _reconnectToDevice(deviceModel);
+    }
+  }
+
+  void _reconnectToDevice(String deviceModel) async {
+    // Start scanning for devices
+    FlutterBluePlus.startScan(timeout: Duration(seconds: 4));
+
+    // Listen to scan results
+    FlutterBluePlus.scanResults.listen((List<ScanResult> results) {
+      for (ScanResult r in results) {
+        if (r.device.name == deviceModel) {
+          // Stop scanning
+          FlutterBluePlus.stopScan();
+
+          // Connect to the device
+          _connectedDevice = r.device;
+          _connectedDevice!.connect().then((_) {
+            print("Connected to $deviceModel");
+            // Handle successful connection here
+          }).catchError((error) {
+            print("Failed to connect: $error");
+            // Handle connection failure here
+          });
+          break;
+        }
+      }
+    });
   }
 
   Future<void> _authenticate() async {
@@ -57,6 +185,15 @@ class HomePageState extends State<HomePage>
     await prefs.clear();
   }
 
+  Future<void> _writeCharacteristic(String value) async {
+    try {
+      await _deviceConnection.writeCharacteristic(value);
+      print('Data written successfully.');
+    } catch (e) {
+      print('Error writing characteristic: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -68,7 +205,10 @@ class HomePageState extends State<HomePage>
                 style: TextStyles.heading1,
               ),
               centerTitle: true,
-              leading: Icon(Icons.wifi_tethering),
+              leading: Icon(
+                Icons.wifi_tethering,
+                color: isConnected ? Colors.green : Colors.red,
+              ),
               actions: [
                 IconButton(
                   onPressed: () {
@@ -97,6 +237,7 @@ class HomePageState extends State<HomePage>
                     _isButtonPressed = false;
                     _scale = 1.0;
                     _locked = !_locked;
+                    _handleLockToggle(); // Handle the lock toggle action
                   });
                 },
                 onTapCancel: () {
@@ -131,9 +272,7 @@ class HomePageState extends State<HomePage>
                         ),
                       ),
                     ),
-                    SizedBox(
-                      height: 12,
-                    ),
+                    SizedBox(height: 12),
                     Text(
                       _locked ? "Bloqueado" : "Desbloqueado",
                       style: TextStyles.heading1,
@@ -144,8 +283,51 @@ class HomePageState extends State<HomePage>
                           : "Mantener pulsado para bloquear",
                       style: TextStyles.normalText,
                     ),
-                    SizedBox(
-                      height: 12,
+                    SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () async {
+                        await _writeCharacteristic("a");
+                      },
+                      child: Text("Send Data"),
+                    ),
+                    SegmentedButton<int>(
+                      showSelectedIcon: false,
+                      segments: [
+                        ButtonSegment<int>(
+                          value: 0,
+                          label: Icon(Icons.bluetooth),
+                        ),
+                        ButtonSegment<int>(
+                          value: 1,
+                          label: Icon(Icons.wifi),
+                        ),
+                      ],
+                      selected: {_selectedIndex},
+                      onSelectionChanged: (Set<int> newSelection) {
+                        setState(() {
+                          _selectedIndex = newSelection.first;
+                        });
+                      },
+                      style: ButtonStyle(
+                        backgroundColor:
+                            MaterialStateProperty.resolveWith<Color?>(
+                          (Set<MaterialState> states) {
+                            if (states.contains(MaterialState.selected)) {
+                              return Colors
+                                  .deepPurple; // Selected background color
+                            }
+                            return null; // Default background color
+                          },
+                        ),
+                        foregroundColor:
+                            MaterialStateProperty.resolveWith<Color?>((states) {
+                          if (states.contains(MaterialState.selected)) {
+                            return Colors
+                                .white; // Set icon color to white when selected
+                          }
+                          return null; // Default icon color
+                        }),
+                      ),
                     ),
                     ElevatedButton(
                       onPressed: () async {

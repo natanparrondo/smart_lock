@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_lock/functions/api_dialog.dart';
 import 'package:smart_lock/theme/font_styles.dart';
 import 'package:smart_lock/components/rfid_card_tile.dart'; // Import the RfidCardTile component
 
@@ -20,6 +21,15 @@ class SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _loadCardList();
+  }
+
+  void _showApiDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return ApiDialog();
+      },
+    );
   }
 
   Future<void> _loadCardList() async {
@@ -163,6 +173,26 @@ class SettingsPageState extends State<SettingsPage> {
                 ),
                 label: Text("Añadir tarjeta", style: TextStyles.normalText),
                 icon: Icon(Icons.contactless_outlined),
+                iconAlignment: IconAlignment.end,
+              ),
+            ),
+            SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () {
+                  _showApiDialog(context);
+                }, // Show the dialog on button press
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.deepPurple, // Sets the text color
+                  padding: EdgeInsets.symmetric(
+                      horizontal: 16.0,
+                      vertical: 12.0), // Adjust padding if needed
+                ),
+                label: Text("Cambiar credenciales Sinric",
+                    style: TextStyles.normalText),
+                icon: Icon(Icons.account_box_rounded),
                 iconAlignment: IconAlignment.end,
               ),
             ),

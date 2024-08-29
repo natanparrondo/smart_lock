@@ -37,6 +37,9 @@ dependencies:
   local_auth:
   shared_preferences: ^2.0.15
   flutter_blur:
+  flutter_blue_plus:
+  provider: ^6.0.1
+  http:
 
 dev_dependencies:
   flutter_test:

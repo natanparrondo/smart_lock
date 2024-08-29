@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -5,6 +9,10 @@ import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_lock/theme/font_styles.dart';
 import 'home_page.dart'; // Import your HomePage widget
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'functions/device_connection.dart';
+
+BluetoothDevice? device;
 
 class OnboardingPage extends StatefulWidget {
   OnboardingPage({super.key});
@@ -13,8 +21,10 @@ class OnboardingPage extends StatefulWidget {
   State<OnboardingPage> createState() => OnboardingPageState();
 }
 
-final TextEditingController _passwordController = TextEditingController();
-final TextEditingController _ssidController = TextEditingController();
+final TextEditingController _passwordController =
+    TextEditingController(text: 'vXugB22L5mKzVbi54D5g');
+final TextEditingController _ssidController =
+    TextEditingController(text: 'MovistarFibra-6F1288');
 
 class OnboardingPageState extends State<OnboardingPage> {
   Future<void> _setAppBeenSetup(bool value) async {
@@ -39,6 +49,77 @@ class OnboardingPageState extends State<OnboardingPage> {
     } else {
       setState(() {
         _currentStep++;
+      });
+    }
+  }
+
+  Future<void> _saveDeviceModel(String deviceModel) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('deviceModel', deviceModel);
+  }
+
+  Future<void> scanAndConnectToDevice() async {
+    setState(() {
+      _showingLoading = true;
+    });
+
+    if (Platform.isAndroid) {
+      await FlutterBluePlus.turnOn(); // Request the user to turn on Bluetooth
+    }
+
+    bool isDeviceConnected = false;
+
+    try {
+      // Start scanning for devices with a 15-second timeout
+      await FlutterBluePlus.startScan(
+        timeout: Duration(seconds: 15),
+        withNames: ["Lock32"], // Filter by device name
+      );
+
+      var subscription = FlutterBluePlus.scanResults.listen((results) async {
+        for (ScanResult result in results) {
+          if (result.advertisementData.localName == "Lock32") {
+            BluetoothDevice device = result.device;
+            await FlutterBluePlus.stopScan();
+
+            try {
+              // Connect to the device using DeviceConnection
+              await DeviceConnection().connectToDevice(device);
+              DeviceConnection().connectedDevice?.state.listen((state) async {
+                if (state == BluetoothConnectionState.connected) {
+                  print('Connected to the device!');
+                  isDeviceConnected = true;
+
+                  // Save the device model after connecting to it
+                  await _saveDeviceModel(device.name);
+
+                  _nextStep(); // Proceed to the next step
+                } else if (state == BluetoothConnectionState.disconnected) {
+                  print('Disconnected from the device!');
+                }
+              });
+            } catch (e) {
+              print('Failed to connect: $e');
+            }
+            break; // Exit the loop after finding the device
+          }
+        }
+      });
+
+      // Wait 15 seconds to allow the device to connect
+      await Future.delayed(Duration(seconds: 15));
+
+      if (!isDeviceConnected) {
+        await FlutterBluePlus.stopScan();
+        subscription.cancel();
+        _currentStep = -2;
+        _nextStep();
+      }
+    } catch (e) {
+      print('Error during Bluetooth operations: $e');
+    } finally {
+      setState(() {
+        _showingLoading = false;
       });
     }
   }
@@ -112,6 +193,8 @@ class OnboardingPageState extends State<OnboardingPage> {
         return _buildStep4();
       case 4:
         return _buildStep5();
+      case -1:
+        return _buildStep2Fail();
       default:
         return _buildStep1();
     }
@@ -139,7 +222,7 @@ class OnboardingPageState extends State<OnboardingPage> {
         ),
         SizedBox(height: 12),
         TextButton.icon(
-          onPressed: _nextStep,
+          onPressed: scanAndConnectToDevice,
           label: Text("Continuar"),
           icon: Icon(Icons.chevron_right),
           iconAlignment: IconAlignment.end,
@@ -187,6 +270,56 @@ class OnboardingPageState extends State<OnboardingPage> {
           onPressed: _nextStep,
           label: Text("Conectar"),
           icon: Icon(Icons.chevron_right),
+          iconAlignment: IconAlignment.end,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStep2Fail() {
+    return Column(
+      key: ValueKey(-1),
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Image.asset(
+          'lib/assets/onboarding_failed.png',
+          width: 250,
+        ),
+        SizedBox(height: 12),
+        Text(
+          "Dispositivo no encontrado",
+          style: TextStyles.heading1,
+        ),
+        SizedBox(height: 12),
+        Text.rich(
+          TextSpan(
+            text:
+                'No se encontró ningun dispositivo con el nombre "', // default text style
+            children: <TextSpan>[
+              TextSpan(
+                text: 'Lock32',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.deepPurpleAccent,
+                ),
+              ),
+              TextSpan(
+                text:
+                    '". Asegurate de que el Bluetooth de tu celular esté encendido y el dispositivo este en modo de emparejamiento.',
+              ),
+            ],
+          ),
+          textAlign: TextAlign.center,
+          style: TextStyles.normalText,
+        ),
+        SizedBox(height: 12),
+        TextButton.icon(
+          onPressed: () {
+            _currentStep = -1;
+            _nextStep();
+          },
+          label: Text("Reintentar"),
+          icon: Icon(Icons.refresh),
           iconAlignment: IconAlignment.end,
         ),
       ],
@@ -317,11 +450,43 @@ class OnboardingPageState extends State<OnboardingPage> {
     );
   }
 
-  void _sendWifiData() {
+  void _sendWifiData() async {
     final String ssid = _ssidController.text;
     final String password = _passwordController.text;
-    // Implement your logic to handle Wi-Fi credentials here
-    print('s;$ssid;$password');
-    _nextStep();
+    final String formattedData = 's;$ssid;$password';
+
+    try {
+      // Ensure the device is connected
+      BluetoothDevice? connectedDevice = DeviceConnection().connectedDevice;
+      if (connectedDevice == null) {
+        print('No device connected.');
+        return;
+      }
+
+      // Discover services and characteristics
+      List<BluetoothService> services =
+          await connectedDevice.discoverServices();
+      for (BluetoothService service in services) {
+        if (service.uuid.toString() == DeviceConnection().serviceUUID) {
+          for (BluetoothCharacteristic characteristic
+              in service.characteristics) {
+            if (characteristic.uuid.toString() ==
+                DeviceConnection().characteristicUUID) {
+              // Write the formatted data to the BLE characteristic
+              await characteristic.write(utf8.encode(formattedData),
+                  withoutResponse: false);
+              print('Data sent: $formattedData');
+              // Proceed to the next step
+              _nextStep();
+              return;
+            }
+          }
+        }
+      }
+      print('Characteristic not found.');
+    } catch (e) {
+      print('Error sending Wi-Fi data: $e');
+      // Handle the error accordingly
+    }
   }
 }
