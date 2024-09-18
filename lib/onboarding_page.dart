@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_lock/theme/font_styles.dart';
 import 'home_page.dart'; // Import your HomePage widget
@@ -30,6 +31,25 @@ class OnboardingPageState extends State<OnboardingPage> {
   Future<void> _setAppBeenSetup(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('appBeenSetup', value);
+  }
+
+  Future<void> _requestBluetoothPermission() async {
+    if (Platform.isAndroid) {
+      await FlutterBluePlus.turnOn();
+      if (Platform.isAndroid) {
+        PermissionStatus status = await Permission.bluetooth.request();
+        if (status.isGranted) {
+          await FlutterBluePlus.turnOn();
+          // Continue with scanning and connecting
+        }
+      }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _requestBluetoothPermission();
   }
 
   final LocalAuthentication auth = LocalAuthentication();
@@ -379,6 +399,19 @@ class OnboardingPageState extends State<OnboardingPage> {
                 horizontal: 16.0, vertical: 12.0), // Adjust padding if needed
           ),
           label: Text("Conectar"),
+          icon: Icon(Icons.wifi_rounded),
+          iconAlignment: IconAlignment.end,
+        ),
+        TextButton.icon(
+          onPressed: _nextStep, // Updated to use function reference
+          style: TextButton.styleFrom(
+            textStyle: TextStyles.normalText,
+            foregroundColor: Colors.white,
+            backgroundColor: Colors.red, // Sets the text color
+            padding: EdgeInsets.symmetric(
+                horizontal: 16.0, vertical: 12.0), // Adjust padding if needed
+          ),
+          label: Text("no conectar un choto"),
           icon: Icon(Icons.wifi_rounded),
           iconAlignment: IconAlignment.end,
         ),

@@ -1,4 +1,5 @@
 // home_page.dart
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart'; // Import the BLE lib
 import 'package:smart_lock/functions/device_connection.dart'; // Import the DeviceConnection class
 import 'package:smart_lock/functions/sinric_requests.dart';
 import 'dart:ui' as ui;
+import 'package:http/http.dart' as http;
 
 import 'package:smart_lock/theme/font_styles.dart'; // Import for BackdropFilter
 
@@ -29,8 +31,9 @@ class HomePageState extends State<HomePage>
   bool _locked = true;
   bool _isButtonPressed = false;
   double _scale = 1.0;
-  int _selectedIndex = 0; // Default selection index for Wi-Fi
+  int _selectedIndex = 1; // Default selection index for BT
   bool isConnected = false;
+  bool bluetoothUnavailable = false;
 
   final DeviceConnection _deviceConnection =
       DeviceConnection(); // Singleton instance
@@ -40,16 +43,58 @@ class HomePageState extends State<HomePage>
     super.initState();
     _authenticate();
     scanAndConnectToDevice();
+    startSSEListening();
+  }
+
+  // Function to start listening to the SSE stream
+  void startSSEListening() async {
+    final prefs = await SharedPreferences.getInstance();
+    final accessToken = prefs.getString('sinric_api_key');
+    print(accessToken);
+    final url = Uri.parse(
+        'https://portal.sinric.pro/sse/stream?accessToken=$accessToken');
+
+    try {
+      final client = http.Client();
+      final request = http.Request('GET', url);
+      final response = await client.send(request);
+
+      response.stream.transform(utf8.decoder).transform(LineSplitter()).listen(
+        (data) {
+          if (data.isNotEmpty) {
+            try {
+              final event = jsonDecode(data);
+              print('Received SSE event: $event');
+              if (event['event'] == 'deviceMessageArrived') {
+                final deviceState = event['Cerradura']['lockState'];
+                setState(() {
+                  _locked = (deviceState == 'On');
+                });
+              }
+            } catch (e) {
+              print('Error decoding event: $e');
+            }
+          }
+        },
+        onError: (e) {
+          print('Stream error: $e');
+        },
+      );
+    } catch (e) {
+      print('Error starting SSE listening: $e');
+    }
   }
 
   Future<void> _handleLockToggle() async {
     String _command = _locked ? "lock" : "unlock";
-    if (_selectedIndex == 0 || _deviceConnection.connectedDevice != null) {
+    if (_selectedIndex == 0 && _deviceConnection.connectedDevice != null) {
+//    if (_selectedIndex == 0 || _deviceConnection.connectedDevice != null) {
       //bt
       print('Changing lock state over bt');
       await _ToggleLockBluetooth(_command);
+      _selectedIndex = 0;
     } else {
-      print('Device is not available.');
+      print('Device is not available over BT, using Wifi.');
       await _ToggleLockWiFi(_command);
       _selectedIndex = 1;
     }
@@ -284,19 +329,32 @@ class HomePageState extends State<HomePage>
                       style: TextStyles.normalText,
                     ),
                     SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: () async {
-                        await _writeCharacteristic("a");
-                      },
-                      child: Text("Send Data"),
-                    ),
+                    _selectedIndex == 0 //bt is selected
+                        ? TextButton.icon(
+                            icon: Icon(Icons.add),
+                            style: TextButton.styleFrom(
+                              textStyle: TextStyles.normalText,
+                              foregroundColor: Colors.white,
+                              backgroundColor:
+                                  Colors.deepPurple, // Sets the text color
+                              padding: EdgeInsets.symmetric(
+                                  horizontal: 16.0,
+                                  vertical: 12.0), // Adjust padding if needed
+                            ),
+                            onPressed: () async {
+                              await _writeCharacteristic("a");
+                            },
+                            label: Text("Añadir Tarjeta RFID"),
+                          )
+                        : SizedBox.shrink(),
+                    SizedBox(height: 12),
                     SegmentedButton<int>(
                       showSelectedIcon: false,
                       segments: [
                         ButtonSegment<int>(
-                          value: 0,
-                          label: Icon(Icons.bluetooth),
-                        ),
+                            value: 0,
+                            label: Icon(Icons.bluetooth),
+                            enabled: bluetoothUnavailable),
                         ButtonSegment<int>(
                           value: 1,
                           label: Icon(Icons.wifi),
