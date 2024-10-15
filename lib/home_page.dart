@@ -1,4 +1,3 @@
-// home_page.dart
 import 'dart:convert';
 import 'dart:io';
 
@@ -16,8 +15,13 @@ import 'package:smart_lock/theme/font_styles.dart'; // Import for BackdropFilter
 
 BluetoothDevice? _connectedDevice;
 
+BluetoothCharacteristic? _commandCharacteristic;
+BluetoothCharacteristic? _statusCharacteristic;
+
 class HomePage extends StatefulWidget {
-  HomePage({super.key});
+  final bool fromOnboarding; // Nuevo parámetro
+
+  HomePage({super.key, this.fromOnboarding = false});
 
   @override
   State<HomePage> createState() => HomePageState();
@@ -28,12 +32,20 @@ class HomePageState extends State<HomePage>
   final LocalAuthentication auth = LocalAuthentication();
   bool isAuthenticated = false;
   bool isAuthenticating = false;
+  bool _isConnecting = false;
   bool _locked = true;
   bool _isButtonPressed = false;
   double _scale = 1.0;
-  int _selectedIndex = 1; // Default selection index for BT
+  int _selectedIndex = 0; // Default selection index for BT
   bool isConnected = false;
-  bool bluetoothUnavailable = false;
+  bool bluetoothUnavailable = true;
+  bool fromOnboarding = false; // Nueva variable
+  bool isDeviceConnected = false;
+
+  // Define los UUIDs como constantes para facilitar su uso y mantenimiento
+  String SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+  String COMMAND_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+  String STATUS_CHARACTERISTIC_UUID = "4694c381-4c73-473f-b9f6-fac2384527b7";
 
   final DeviceConnection _deviceConnection =
       DeviceConnection(); // Singleton instance
@@ -42,9 +54,247 @@ class HomePageState extends State<HomePage>
   void initState() {
     super.initState();
     _authenticate();
-    scanAndConnectToDevice();
     startSSEListening();
+    fromOnboarding = widget.fromOnboarding; // Asignar el valor pasado
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_isConnecting && !fromOnboarding) {
+      // Solo intentar conectar si NO viene de Onboarding
+      _attemptConnection();
+    }
+    fromOnboarding = false; // Reiniciar para futuras navegaciones
+  }
+
+  Future<void> _discoverAndAssignCharacteristics() async {
+    if (_deviceConnection.connectedDevice != null) {
+      List<BluetoothService> services =
+          await _deviceConnection.connectedDevice!.discoverServices();
+      for (var service in services) {
+        if (service.uuid.toString() == SERVICE_UUID) {
+          // Usa la constante definida
+          for (var characteristic in service.characteristics) {
+            if (characteristic.uuid.toString() == COMMAND_CHARACTERISTIC_UUID) {
+              _commandCharacteristic = characteristic;
+              print("Command Characteristic found");
+            } else if (characteristic.uuid.toString() ==
+                STATUS_CHARACTERISTIC_UUID) {
+              _statusCharacteristic = characteristic;
+              await _statusCharacteristic!.setNotifyValue(true);
+              _statusCharacteristic!.value.listen((value) {
+                String lockState = String.fromCharCodes(value).trim();
+                print('Estado recibido: $lockState');
+                setState(() {
+                  _locked = (lockState == 'On');
+                });
+              });
+              print("Status Characteristic found and notification set");
+            }
+          }
+        }
+      }
+    }
+  }
+
+  Future<void> listenAndSendCommand() async {
+    try {
+      if (_deviceConnection.connectedDevice != null) {
+        var services =
+            await _deviceConnection.connectedDevice!.discoverServices();
+
+        for (var service in services) {
+          var mainCharacteristic = service.characteristics.firstWhere(
+            (characteristic) =>
+                characteristic.uuid.toString() ==
+                '12ab34cd-56ef-78gh-90ij-klmnopqrstuv',
+          );
+
+          await mainCharacteristic.setNotifyValue(true);
+
+          mainCharacteristic.value.listen((value) async {
+            String lockState = String.fromCharCodes(value);
+            print('Estado recibido: $lockState');
+
+            // Actualiza la variable _locked en función del estado recibido
+            if (lockState == 'On') {
+              _locked = true; // Estado bloqueado
+              await mainCharacteristic.write('On'.codeUnits);
+              print('Enviado comando "On" a la otra característica');
+            } else if (lockState == 'Off') {
+              _locked = false; // Estado desbloqueado
+              await mainCharacteristic.write('Off'.codeUnits);
+              print('Enviado comando "Off" a la otra característica');
+            }
+
+            // Mostrar el estado actual del bloqueo en la consola
+            print(
+                'Estado actual del bloqueo: ${_locked ? 'Bloqueado' : 'Desbloqueado'}');
+          }, onError: (error) {
+            print('Error al escuchar la característica: $error');
+          });
+        }
+      }
+    } catch (e) {
+      print('Error en listenAndSendCommand: $e');
+    }
+  }
+
+  // Function to attempt connection to the device
+  Future<void> _attemptConnection() async {
+    // Mostrar diálogo de conexión
+    Future.delayed(Duration.zero, () {
+      showDialog(
+        context: context,
+        barrierDismissible: false, // Prevenir cierre al tocar fuera
+        builder: (BuildContext context) {
+          return AlertDialog(
+              title: const Text('Conectando...'),
+              content: Row(
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(width: 20),
+                  const Text('Por favor, espere.'),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  child: const Text('Cancelar'),
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Cerrar el diálogo
+                  },
+                )
+              ]);
+        },
+      );
+    });
+
+    // Intentar conectar al dispositivo
+    bool connected = await scanAndConnectToDevice();
+
+    // Cerrar el diálogo después del intento de conexión
+    Navigator.of(context).pop();
+
+    if (connected) {
+      await _discoverAndAssignCharacteristics();
+      _showConnectionDialog('Éxito', 'Conectado al dispositivo.');
+      setState(() {
+        isDeviceConnected = true;
+        bluetoothUnavailable = false;
+      });
+    } else {
+      _showConnectionDialog('Error', 'No se pudo conectar al dispositivo.');
+      setState(() {
+        bluetoothUnavailable = true;
+      });
+    }
+  }
+
+  void _showConnectionDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              child: const Text('OK'),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<bool> scanAndConnectToDevice() async {
+    if (Platform.isAndroid) {
+      await FlutterBluePlus.turnOn(); // Request the user to turn on Bluetooth
+    }
+
+    try {
+      // Start scanning for devices with a 1-second timeout
+      await FlutterBluePlus.startScan(
+        timeout: const Duration(seconds: 1),
+        withNames: ["Lock32"], // Filter by device name
+      );
+
+      var subscription = FlutterBluePlus.scanResults.listen((results) async {
+        for (ScanResult result in results) {
+          if (result.advertisementData.localName == "Lock32") {
+            BluetoothDevice device = result.device;
+            await FlutterBluePlus.stopScan();
+
+            try {
+              // Connect to the device using DeviceConnection
+              await _deviceConnection.connectToDevice(device);
+              _deviceConnection.connectedDevice?.state.listen((state) async {
+                if (state == BluetoothConnectionState.connected) {
+                  print('Connected to the device!');
+                  isDeviceConnected = true;
+
+                  // Escuchar el estado del bloqueo
+                  _deviceConnection.connectedDevice!
+                      .discoverServices()
+                      .then((services) {
+                    for (var service in services) {
+                      if (service.uuid.toString() ==
+                          "4fafc201-1fb5-459e-8fcc-c5c9c331914b") {
+                        for (var characteristic in service.characteristics) {
+                          if (characteristic.uuid.toString() ==
+                              "04b598db-da1a-4ee0-a6a8-487f553eebeb") {
+                            // Este UUID parece ser anterior o incorrecto
+                            characteristic
+                                .setNotifyValue(true); // Activar notificaciones
+                            characteristic.value.listen((value) {
+                              String lockState =
+                                  String.fromCharCodes(value).trim();
+                              setState(() {
+                                _locked =
+                                    (lockState == 'On'); // Actualiza el estado
+                              });
+                            });
+                          }
+                        }
+                      }
+                    }
+                  });
+                } else if (state == BluetoothConnectionState.disconnected) {
+                  print('Disconnected from the device!');
+                  setState(() {
+                    isDeviceConnected =
+                        false; // Update the state if disconnected
+                  });
+                }
+              });
+            } catch (e) {
+              print('Failed to connect: $e');
+              // Set isDeviceConnected to false if an error occurs
+              isDeviceConnected = false;
+            }
+            break; // Exit the loop after finding the device
+          }
+        }
+      });
+
+      // Wait 15 seconds to allow the device to connect
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (!isDeviceConnected) {
+        await FlutterBluePlus.stopScan();
+        subscription.cancel();
+      }
+    } catch (e) {
+      print('Error during Bluetooth operations: $e');
+    }
+    return isDeviceConnected; // Return the connection status
+  }
+
+  // Function to start listening to the SSE stream
 
   // Function to start listening to the SSE stream
   void startSSEListening() async {
@@ -59,7 +309,10 @@ class HomePageState extends State<HomePage>
       final request = http.Request('GET', url);
       final response = await client.send(request);
 
-      response.stream.transform(utf8.decoder).transform(LineSplitter()).listen(
+      response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(
         (data) {
           if (data.isNotEmpty) {
             try {
@@ -86,79 +339,26 @@ class HomePageState extends State<HomePage>
   }
 
   Future<void> _handleLockToggle() async {
-    String _command = _locked ? "lock" : "unlock";
+    String command = _locked ? "lock" : "unlock";
     if (_selectedIndex == 0 && _deviceConnection.connectedDevice != null) {
-//    if (_selectedIndex == 0 || _deviceConnection.connectedDevice != null) {
+//    if (_selectedIndex == 0 || _deviceConnection.connectedDevice != fnull) {
       //bt
       print('Changing lock state over bt');
-      await _ToggleLockBluetooth(_command);
+      await _ToggleLockBluetooth(command);
       _selectedIndex = 0;
     } else {
       print('Device is not available over BT, using Wifi.');
-      await _ToggleLockWiFi(_command);
+      await _ToggleLockWiFi(command);
       _selectedIndex = 1;
     }
   }
 
   Future<void> _ToggleLockWiFi(command) async {
-    await sendLockStateRequest(command);
+    await sendLockStateRequest(command, context);
   }
 
   Future<void> _ToggleLockBluetooth(command) async {
     await _writeCharacteristic(command);
-  }
-
-  Future<void> scanAndConnectToDevice() async {
-    if (Platform.isAndroid) {
-      await FlutterBluePlus.turnOn(); // Request the user to turn on Bluetooth
-    }
-
-    bool isDeviceConnected = false;
-
-    try {
-      // Start scanning for devices with a 15-second timeout
-      await FlutterBluePlus.startScan(
-        timeout: Duration(seconds: 15),
-        withNames: ["MyESP32"], // Filter by device name
-      );
-
-      var subscription = FlutterBluePlus.scanResults.listen((results) async {
-        for (ScanResult result in results) {
-          if (result.advertisementData.localName == "MyESP32") {
-            BluetoothDevice device = result.device;
-            await FlutterBluePlus.stopScan();
-
-            try {
-              // Connect to the device using DeviceConnection
-              await DeviceConnection().connectToDevice(device);
-              DeviceConnection().connectedDevice?.state.listen((state) async {
-                if (state == BluetoothConnectionState.connected) {
-                  print('Connected to the device!');
-                  isDeviceConnected = true;
-                } else if (state == BluetoothConnectionState.disconnected) {
-                  print('Disconnected from the device!');
-                }
-              });
-            } catch (e) {
-              print('Failed to connect: $e');
-            }
-            break; // Exit the loop after finding the device
-          }
-        }
-      });
-
-      // Wait 15 seconds to allow the device to connect
-      await Future.delayed(Duration(seconds: 15));
-
-      if (!isDeviceConnected) {
-        await FlutterBluePlus.stopScan();
-        subscription.cancel();
-      }
-    } catch (e) {
-      print('Error during Bluetooth operations: $e');
-    } finally {
-      // Set the loading state or perform any cleanup tasks here if necessary
-    }
   }
 
   Future<String?> _getSavedDeviceModel() async {
@@ -176,7 +376,7 @@ class HomePageState extends State<HomePage>
 
   void _reconnectToDevice(String deviceModel) async {
     // Start scanning for devices
-    FlutterBluePlus.startScan(timeout: Duration(seconds: 4));
+    FlutterBluePlus.startScan(timeout: const Duration(seconds: 4));
 
     // Listen to scan results
     FlutterBluePlus.scanResults.listen((List<ScanResult> results) {
@@ -250,16 +450,17 @@ class HomePageState extends State<HomePage>
                 style: TextStyles.heading1,
               ),
               centerTitle: true,
-              leading: Icon(
-                Icons.wifi_tethering,
-                color: isConnected ? Colors.green : Colors.red,
+              leading: IconButton(
+                onPressed: _attemptConnection,
+                icon: Icon(Icons.wifi_tethering),
+                color: bluetoothUnavailable ? Colors.red : Colors.green,
               ),
               actions: [
                 IconButton(
                   onPressed: () {
                     Navigator.of(context).pushNamed('/settings');
                   },
-                  icon: Icon(Icons.settings_outlined),
+                  icon: const Icon(Icons.settings_outlined),
                 )
               ],
             )
@@ -297,7 +498,7 @@ class HomePageState extends State<HomePage>
                     Transform.scale(
                       scale: _scale,
                       child: AnimatedSwitcher(
-                        duration: Duration(milliseconds: 300),
+                        duration: const Duration(milliseconds: 300),
                         switchInCurve: Curves.easeIn,
                         switchOutCurve: Curves.bounceIn,
                         transitionBuilder:
@@ -317,7 +518,7 @@ class HomePageState extends State<HomePage>
                         ),
                       ),
                     ),
-                    SizedBox(height: 12),
+                    const SizedBox(height: 12),
                     Text(
                       _locked ? "Bloqueado" : "Desbloqueado",
                       style: TextStyles.heading1,
@@ -328,34 +529,34 @@ class HomePageState extends State<HomePage>
                           : "Mantener pulsado para bloquear",
                       style: TextStyles.normalText,
                     ),
-                    SizedBox(height: 12),
+                    const SizedBox(height: 12),
                     _selectedIndex == 0 //bt is selected
                         ? TextButton.icon(
-                            icon: Icon(Icons.add),
+                            icon: const Icon(Icons.add_card_rounded),
                             style: TextButton.styleFrom(
                               textStyle: TextStyles.normalText,
                               foregroundColor: Colors.white,
                               backgroundColor:
                                   Colors.deepPurple, // Sets the text color
-                              padding: EdgeInsets.symmetric(
+                              padding: const EdgeInsets.symmetric(
                                   horizontal: 16.0,
                                   vertical: 12.0), // Adjust padding if needed
                             ),
                             onPressed: () async {
                               await _writeCharacteristic("a");
                             },
-                            label: Text("Añadir Tarjeta RFID"),
+                            label: const Text("Añadir Tarjeta RFID"),
                           )
-                        : SizedBox.shrink(),
-                    SizedBox(height: 12),
+                        : const SizedBox.shrink(),
+                    const SizedBox(height: 12),
                     SegmentedButton<int>(
                       showSelectedIcon: false,
                       segments: [
                         ButtonSegment<int>(
                             value: 0,
-                            label: Icon(Icons.bluetooth),
-                            enabled: bluetoothUnavailable),
-                        ButtonSegment<int>(
+                            label: const Icon(Icons.bluetooth),
+                            enabled: bluetoothUnavailable || isDeviceConnected),
+                        const ButtonSegment<int>(
                           value: 1,
                           label: Icon(Icons.wifi),
                         ),
@@ -368,9 +569,9 @@ class HomePageState extends State<HomePage>
                       },
                       style: ButtonStyle(
                         backgroundColor:
-                            MaterialStateProperty.resolveWith<Color?>(
-                          (Set<MaterialState> states) {
-                            if (states.contains(MaterialState.selected)) {
+                            WidgetStateProperty.resolveWith<Color?>(
+                          (Set<WidgetState> states) {
+                            if (states.contains(WidgetState.selected)) {
                               return Colors
                                   .deepPurple; // Selected background color
                             }
@@ -378,8 +579,8 @@ class HomePageState extends State<HomePage>
                           },
                         ),
                         foregroundColor:
-                            MaterialStateProperty.resolveWith<Color?>((states) {
-                          if (states.contains(MaterialState.selected)) {
+                            WidgetStateProperty.resolveWith<Color?>((states) {
+                          if (states.contains(WidgetState.selected)) {
                             return Colors
                                 .white; // Set icon color to white when selected
                           }
@@ -391,7 +592,7 @@ class HomePageState extends State<HomePage>
                       onPressed: () async {
                         await clearAllPreferences();
                       },
-                      child: Text('Clear Preferences'),
+                      child: const Text('Clear Preferences'),
                     ),
                   ],
                 ),
@@ -417,14 +618,14 @@ class HomePageState extends State<HomePage>
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
+                        const Text(
                           "Autenticación requerida",
                           style: TextStyle(color: Colors.white, fontSize: 24),
                         ),
-                        SizedBox(height: 20),
+                        const SizedBox(height: 20),
                         IconButton(
-                          icon:
-                              Icon(Icons.replay, color: Colors.white, size: 50),
+                          icon: const Icon(Icons.replay,
+                              color: Colors.white, size: 50),
                           onPressed: _authenticate,
                         ),
                       ],
@@ -438,7 +639,7 @@ class HomePageState extends State<HomePage>
           // Loading spinner while authenticating
           Visibility(
             visible: isAuthenticating,
-            child: Center(
+            child: const Center(
               child: CircularProgressIndicator(),
             ),
           ),

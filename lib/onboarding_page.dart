@@ -46,10 +46,19 @@ class OnboardingPageState extends State<OnboardingPage> {
     }
   }
 
+  Future<void> _requestLocationPermission() async {
+    await Permission.locationWhenInUse.request();
+  }
+
+  Future<void> _requestPermissionsSequentially() async {
+    await _requestBluetoothPermission(); // Wait until Bluetooth permission is handled
+    await _requestLocationPermission(); // Then ask for location permission
+  }
+
   @override
   void initState() {
     super.initState();
-    _requestBluetoothPermission();
+    _requestPermissionsSequentially();
   }
 
   final LocalAuthentication auth = LocalAuthentication();
@@ -61,7 +70,7 @@ class OnboardingPageState extends State<OnboardingPage> {
       setState(() {
         _showingLoading = true;
       });
-      await Future.delayed(Duration(seconds: 1));
+      await Future.delayed(const Duration(seconds: 1));
       setState(() {
         _showingLoading = false;
         _currentStep++;
@@ -70,6 +79,54 @@ class OnboardingPageState extends State<OnboardingPage> {
       setState(() {
         _currentStep++;
       });
+    }
+  }
+
+  void _subscribeToCharacteristic() async {
+    try {
+      // Asegúrate de que el dispositivo esté conectado
+      BluetoothDevice? connectedDevice = DeviceConnection().connectedDevice;
+      if (connectedDevice == null) {
+        print('No device connected.');
+        return;
+      }
+
+      // Descubre los servicios y las características
+      List<BluetoothService> services =
+          await connectedDevice.discoverServices();
+      for (BluetoothService service in services) {
+        if (service.uuid.toString() == DeviceConnection().serviceUUID) {
+          for (BluetoothCharacteristic characteristic
+              in service.characteristics) {
+            if (characteristic.uuid.toString() ==
+                DeviceConnection().characteristicUUID) {
+              // Asegúrate de que la característica soporte notificaciones
+              if (characteristic.properties.notify) {
+                // Suscribirse a las notificaciones de la característica
+                await characteristic.setNotifyValue(true);
+
+                // Escuchar los cambios en la característica (notificaciones)
+                characteristic.value.listen((value) {
+                  // Los datos recibidos estarán en 'value', que es una lista de bytes
+                  String receivedData = utf8.decode(value);
+                  print('Received data: $receivedData');
+
+                  // Aquí puedes manejar los datos recibidos
+                  // Por ejemplo, puedes actualizar el estado de la UI o realizar otras acciones
+                });
+
+                print('Listening to characteristic notifications.');
+                return; // Salir del bucle una vez que se ha encontrado la característica
+              } else {
+                print('Characteristic does not support notifications.');
+              }
+            }
+          }
+        }
+      }
+      print('Characteristic not found.');
+    } catch (e) {
+      print('Error subscribing to notifications: $e');
     }
   }
 
@@ -92,7 +149,7 @@ class OnboardingPageState extends State<OnboardingPage> {
     try {
       // Start scanning for devices with a 15-second timeout
       await FlutterBluePlus.startScan(
-        timeout: Duration(seconds: 15),
+        timeout: const Duration(seconds: 15),
         withNames: ["Lock32"], // Filter by device name
       );
 
@@ -105,15 +162,19 @@ class OnboardingPageState extends State<OnboardingPage> {
             try {
               // Connect to the device using DeviceConnection
               await DeviceConnection().connectToDevice(device);
+              // Justo después de la conexión exitosa al dispositivo
               DeviceConnection().connectedDevice?.state.listen((state) async {
                 if (state == BluetoothConnectionState.connected) {
                   print('Connected to the device!');
                   isDeviceConnected = true;
 
-                  // Save the device model after connecting to it
+                  // Suscribirse a las notificaciones
+                  _subscribeToCharacteristic();
+
+                  // Guardar el modelo del dispositivo
                   await _saveDeviceModel(device.name);
 
-                  _nextStep(); // Proceed to the next step
+                  _nextStep(); // Continuar al siguiente paso
                 } else if (state == BluetoothConnectionState.disconnected) {
                   print('Disconnected from the device!');
                 }
@@ -127,7 +188,7 @@ class OnboardingPageState extends State<OnboardingPage> {
       });
 
       // Wait 15 seconds to allow the device to connect
-      await Future.delayed(Duration(seconds: 15));
+      await Future.delayed(const Duration(seconds: 15));
 
       if (!isDeviceConnected) {
         await FlutterBluePlus.stopScan();
@@ -138,9 +199,12 @@ class OnboardingPageState extends State<OnboardingPage> {
     } catch (e) {
       print('Error during Bluetooth operations: $e');
     } finally {
-      setState(() {
-        _showingLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _showingLoading = false;
+          _currentStep++;
+        });
+      }
     }
   }
 
@@ -165,7 +229,10 @@ class OnboardingPageState extends State<OnboardingPage> {
 
   Future<void> _end() async {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => HomePage()),
+      MaterialPageRoute(
+        builder: (context) =>
+            HomePage(fromOnboarding: true), // Pasar el parámetro aquí
+      ),
     );
   }
 
@@ -192,7 +259,7 @@ class OnboardingPageState extends State<OnboardingPage> {
           if (_showingLoading)
             Container(
               color: Colors.black.withOpacity(0.5),
-              child: Center(
+              child: const Center(
                 child: CircularProgressIndicator(),
               ),
             ),
@@ -222,29 +289,29 @@ class OnboardingPageState extends State<OnboardingPage> {
 
   Widget _buildStep1() {
     return Column(
-      key: ValueKey(0),
+      key: const ValueKey(0),
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Image.asset(
           'lib/assets/onboarding_search.png',
           width: 250,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text(
           "Vincular dispositivo",
           style: TextStyles.heading1,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text(
           textAlign: TextAlign.center,
           "Se buscaran los dispositivos cercanos compatibles para conectar con la aplicación.",
           style: TextStyles.normalText,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         TextButton.icon(
           onPressed: scanAndConnectToDevice,
-          label: Text("Continuar"),
-          icon: Icon(Icons.chevron_right),
+          label: const Text("Continuar"),
+          icon: const Icon(Icons.chevron_right),
           iconAlignment: IconAlignment.end,
         ),
       ],
@@ -253,21 +320,21 @@ class OnboardingPageState extends State<OnboardingPage> {
 
   Widget _buildStep2() {
     return Column(
-      key: ValueKey(1),
+      key: const ValueKey(1),
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Image.asset(
           'lib/assets/onboarding_success.png',
           width: 250,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text(
           "Dispositivo encontrado",
           style: TextStyles.heading1,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text.rich(
-          TextSpan(
+          const TextSpan(
             text: 'Se establecerá "', // default text style
             children: <TextSpan>[
               TextSpan(
@@ -285,11 +352,11 @@ class OnboardingPageState extends State<OnboardingPage> {
           textAlign: TextAlign.center,
           style: TextStyles.normalText,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         TextButton.icon(
           onPressed: _nextStep,
-          label: Text("Conectar"),
-          icon: Icon(Icons.chevron_right),
+          label: const Text("Conectar"),
+          icon: const Icon(Icons.chevron_right),
           iconAlignment: IconAlignment.end,
         ),
       ],
@@ -298,21 +365,21 @@ class OnboardingPageState extends State<OnboardingPage> {
 
   Widget _buildStep2Fail() {
     return Column(
-      key: ValueKey(-1),
+      key: const ValueKey(-1),
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Image.asset(
           'lib/assets/onboarding_failed.png',
           width: 250,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text(
           "Dispositivo no encontrado",
           style: TextStyles.heading1,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text.rich(
-          TextSpan(
+          const TextSpan(
             text:
                 'No se encontró ningun dispositivo con el nombre "', // default text style
             children: <TextSpan>[
@@ -332,14 +399,14 @@ class OnboardingPageState extends State<OnboardingPage> {
           textAlign: TextAlign.center,
           style: TextStyles.normalText,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         TextButton.icon(
           onPressed: () {
             _currentStep = -1;
             _nextStep();
           },
-          label: Text("Reintentar"),
-          icon: Icon(Icons.refresh),
+          label: const Text("Reintentar"),
+          icon: const Icon(Icons.refresh),
           iconAlignment: IconAlignment.end,
         ),
       ],
@@ -348,39 +415,39 @@ class OnboardingPageState extends State<OnboardingPage> {
 
   Widget _buildStep3() {
     return Column(
-      key: ValueKey(2),
+      key: const ValueKey(2),
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text(
           textAlign: TextAlign.center,
           "Ingresa las credenciales WI-FI",
           style: TextStyles.heading1,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text(
           textAlign: TextAlign.center,
           "Será usado para autenticar con la cerradura, solo lo pediremos la primera vez.",
           style: TextStyles.normalText,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         TextField(
           controller: _ssidController,
-          style: TextStyle(fontFamily: TextStyles.fontFamily),
+          style: const TextStyle(fontFamily: TextStyles.fontFamily),
           keyboardType: TextInputType.text,
           autofocus: true,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
               label: Text(
                 "SSID (Nombre)",
                 style: TextStyle(fontFamily: TextStyles.fontFamily),
               ),
               border: OutlineInputBorder()),
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         TextField(
           controller: _passwordController,
           obscureText: true,
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             border: OutlineInputBorder(),
             label: Text(
               "Password",
@@ -388,18 +455,18 @@ class OnboardingPageState extends State<OnboardingPage> {
             ),
           ),
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         TextButton.icon(
           onPressed: _sendWifiData, // Updated to use function reference
           style: TextButton.styleFrom(
             textStyle: TextStyles.normalText,
             foregroundColor: Colors.white,
             backgroundColor: Colors.deepPurple, // Sets the text color
-            padding: EdgeInsets.symmetric(
+            padding: const EdgeInsets.symmetric(
                 horizontal: 16.0, vertical: 12.0), // Adjust padding if needed
           ),
-          label: Text("Conectar"),
-          icon: Icon(Icons.wifi_rounded),
+          label: const Text("Conectar"),
+          icon: const Icon(Icons.wifi_rounded),
           iconAlignment: IconAlignment.end,
         ),
         TextButton.icon(
@@ -408,11 +475,11 @@ class OnboardingPageState extends State<OnboardingPage> {
             textStyle: TextStyles.normalText,
             foregroundColor: Colors.white,
             backgroundColor: Colors.red, // Sets the text color
-            padding: EdgeInsets.symmetric(
+            padding: const EdgeInsets.symmetric(
                 horizontal: 16.0, vertical: 12.0), // Adjust padding if needed
           ),
-          label: Text("no conectar un choto"),
-          icon: Icon(Icons.wifi_rounded),
+          label: const Text("no conectar"),
+          icon: const Icon(Icons.wifi_rounded),
           iconAlignment: IconAlignment.end,
         ),
       ],
@@ -421,30 +488,30 @@ class OnboardingPageState extends State<OnboardingPage> {
 
   Widget _buildStep4() {
     return Column(
-      key: ValueKey(3),
+      key: const ValueKey(3),
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Image.asset(
           'lib/assets/onboarding_biometric.png',
           width: 250,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text(
           textAlign: TextAlign.center,
           "Habilitar acceso con biometria",
           style: TextStyles.heading1,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text(
           textAlign: TextAlign.center,
           "Habilita el permiso necesario para acceder a la app de forma segura con Touch ID, Face ID o PIN.",
           style: TextStyles.normalText,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         TextButton.icon(
           onPressed: _authenticate,
-          label: Text("Habilitar acceso biometrico"),
-          icon: Icon(Icons.chevron_right),
+          label: const Text("Habilitar acceso biometrico"),
+          icon: const Icon(Icons.chevron_right),
           iconAlignment: IconAlignment.end,
         ),
       ],
@@ -453,30 +520,30 @@ class OnboardingPageState extends State<OnboardingPage> {
 
   Widget _buildStep5() {
     return Column(
-      key: ValueKey(4),
+      key: const ValueKey(4),
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Image.asset(
           'lib/assets/onboarding_end.png',
           width: 250,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text(
           textAlign: TextAlign.center,
           "Todo listo!",
           style: TextStyles.heading1,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         Text(
           textAlign: TextAlign.center,
           "Termino el paso de configuración del dispositivo, ya puedes empezar a usarla. Puedes añadir tarjetas en la pantalla de configuración.",
           style: TextStyles.normalText,
         ),
-        SizedBox(height: 12),
+        const SizedBox(height: 12),
         TextButton.icon(
           onPressed: _end,
-          label: Text("Finalizar"),
-          icon: Icon(Icons.check),
+          label: const Text("Finalizar"),
+          icon: const Icon(Icons.check),
           iconAlignment: IconAlignment.end,
         ),
       ],

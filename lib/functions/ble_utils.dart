@@ -8,7 +8,7 @@ Future<void> startScanningAndConnect({
   required Function() onScanTimeout,
 }) async {
   // Start scanning for devices
-  FlutterBluePlus.startScan(timeout: Duration(seconds: 15));
+  FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
 
   FlutterBluePlus.scanResults.listen((results) {
     for (ScanResult result in results) {
@@ -21,7 +21,7 @@ Future<void> startScanningAndConnect({
   });
 
   // Handle scan timeout
-  await Future.delayed(Duration(seconds: 15));
+  await Future.delayed(const Duration(seconds: 15));
   FlutterBluePlus.stopScan();
   onScanTimeout();
 }

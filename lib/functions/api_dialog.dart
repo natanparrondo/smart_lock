@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiDialog extends StatefulWidget {
+  const ApiDialog({super.key});
+
   @override
   _ApiDialogState createState() => _ApiDialogState();
 }
 
 class _ApiDialogState extends State<ApiDialog> {
-  TextEditingController _apiKeyController =
+  final TextEditingController _apiKeyController =
       TextEditingController(text: '5647741b-579b-4a52-ab2c-5d6252d3c4c3');
-  TextEditingController _deviceIdController =
+  final TextEditingController _deviceIdController =
       TextEditingController(text: '66ace703674e208e6f045258');
 
   @override
@@ -29,17 +31,17 @@ class _ApiDialogState extends State<ApiDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Enter API Key and Device ID'),
+      title: const Text('Enter API Key and Device ID'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
             controller: _apiKeyController,
-            decoration: InputDecoration(labelText: 'Sinric API Key'),
+            decoration: const InputDecoration(labelText: 'Sinric API Key'),
           ),
           TextField(
             controller: _deviceIdController,
-            decoration: InputDecoration(labelText: 'Sinric Device ID'),
+            decoration: const InputDecoration(labelText: 'Sinric Device ID'),
           ),
         ],
       ),
@@ -48,11 +50,11 @@ class _ApiDialogState extends State<ApiDialog> {
           onPressed: () {
             Navigator.of(context).pop(); // Close the dialog without saving
           },
-          child: Text('Cancel'),
+          child: const Text('Cancel'),
         ),
         TextButton(
           onPressed: _savePreferences,
-          child: Text('Save'),
+          child: const Text('Save'),
         ),
       ],
     );

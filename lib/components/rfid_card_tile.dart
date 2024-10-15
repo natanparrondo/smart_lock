@@ -8,18 +8,18 @@ class RfidCardTile extends StatelessWidget {
   final VoidCallback onRemove; // Add a callback for the remove action
 
   const RfidCardTile({
-    Key? key,
+    super.key,
     required this.nickname,
     required this.id,
     required this.onRemove, // Add the onRemove parameter
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: EdgeInsets.symmetric(
+      margin: const EdgeInsets.symmetric(
           vertical: 4), // 8 units of separation (4 top and 4 bottom)
-      padding: EdgeInsets.fromLTRB(12, 6, 12, 6),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
@@ -41,7 +41,7 @@ class RfidCardTile extends StatelessWidget {
             ],
           ),
           IconButton(
-            icon: Icon(Icons.close, color: Colors.white),
+            icon: const Icon(Icons.close, color: Colors.white),
             onPressed: onRemove, // Call the remove callback
           ),
         ],

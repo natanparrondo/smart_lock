@@ -33,11 +33,11 @@ class MyApp extends StatelessWidget {
         future: _getAppBeenSetup(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Scaffold(
+            return const Scaffold(
               body: Center(child: CircularProgressIndicator()),
             );
           } else if (snapshot.hasError) {
-            return Scaffold(
+            return const Scaffold(
               body: Center(child: Text('Error al cargar estado')),
             );
           } else if (snapshot.hasData) {

@@ -59,5 +59,6 @@
   "files.associations": {
     ".css": "tailwindcss",
     "iostream": "cpp"
-  }
+  },
+  "cmake.ignoreCMakeListsMissing": true
 }

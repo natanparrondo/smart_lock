@@ -95,7 +95,7 @@ class SettingsPageState extends State<SettingsPage> {
     );
 
     // Simulate waiting for the card to be scanned and the ID to be received
-    await Future.delayed(Duration(seconds: 5)); // Simulated delay
+    await Future.delayed(const Duration(seconds: 5)); // Simulated delay
 
     // Simulated received card ID
     setState(() {
@@ -127,7 +127,7 @@ class SettingsPageState extends State<SettingsPage> {
         title: Text("Settings", style: TextStyles.heading1),
         centerTitle: true,
         leading: IconButton(
-          icon: Icon(Icons.chevron_left),
+          icon: const Icon(Icons.chevron_left),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -144,7 +144,7 @@ class SettingsPageState extends State<SettingsPage> {
               'Escribe el nombre que será asignado a la tarjeta, luego presiona el boton de confirmar',
               style: TextStyles.normalText,
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             TextField(
               controller: _cardNameController,
               focusNode: _textFieldFocusNode,
@@ -152,14 +152,14 @@ class SettingsPageState extends State<SettingsPage> {
               decoration: InputDecoration(
                 label:
                     Text('Nombre de la tarjeta', style: TextStyles.normalText),
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
               ),
               onChanged: (text) {
                 print("TextField changed: $text"); // Debug print
               },
             ),
-            SizedBox(height: 12),
-            Container(
+            const SizedBox(height: 12),
+            SizedBox(
               width: double.infinity,
               child: TextButton.icon(
                 onPressed:
@@ -167,17 +167,17 @@ class SettingsPageState extends State<SettingsPage> {
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.white,
                   backgroundColor: Colors.deepPurple, // Sets the text color
-                  padding: EdgeInsets.symmetric(
+                  padding: const EdgeInsets.symmetric(
                       horizontal: 16.0,
                       vertical: 12.0), // Adjust padding if needed
                 ),
                 label: Text("Añadir tarjeta", style: TextStyles.normalText),
-                icon: Icon(Icons.contactless_outlined),
+                icon: const Icon(Icons.contactless_outlined),
                 iconAlignment: IconAlignment.end,
               ),
             ),
-            SizedBox(height: 12),
-            Container(
+            const SizedBox(height: 12),
+            SizedBox(
               width: double.infinity,
               child: TextButton.icon(
                 onPressed: () {
@@ -186,17 +186,17 @@ class SettingsPageState extends State<SettingsPage> {
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.white,
                   backgroundColor: Colors.deepPurple, // Sets the text color
-                  padding: EdgeInsets.symmetric(
+                  padding: const EdgeInsets.symmetric(
                       horizontal: 16.0,
                       vertical: 12.0), // Adjust padding if needed
                 ),
                 label: Text("Cambiar credenciales Sinric",
                     style: TextStyles.normalText),
-                icon: Icon(Icons.account_box_rounded),
+                icon: const Icon(Icons.account_box_rounded),
                 iconAlignment: IconAlignment.end,
               ),
             ),
-            SizedBox(height: 24),
+            const SizedBox(height: 24),
             Text(
               'Tarjetas registradas',
               style: TextStyles.heading1,
@@ -214,19 +214,19 @@ class SettingsPageState extends State<SettingsPage> {
                 },
               ),
             ),
-            Container(
+            SizedBox(
               width: double.infinity,
               child: TextButton.icon(
                 onPressed: () {}, // Define the reset action
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.white,
                   backgroundColor: Colors.red, // Sets the text color
-                  padding: EdgeInsets.symmetric(
+                  padding: const EdgeInsets.symmetric(
                       horizontal: 16.0,
                       vertical: 12.0), // Adjust padding if needed
                 ),
                 label: Text("RESET", style: TextStyles.normalText),
-                icon: Icon(Icons.close),
+                icon: const Icon(Icons.close),
                 iconAlignment: IconAlignment.end,
               ),
             ),
