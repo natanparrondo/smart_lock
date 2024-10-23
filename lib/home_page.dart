@@ -10,6 +10,7 @@ import 'package:smart_lock/functions/device_connection.dart'; // Import the Devi
 import 'package:smart_lock/functions/sinric_requests.dart';
 import 'dart:ui' as ui;
 import 'package:http/http.dart' as http;
+import 'package:smart_lock/settings_page.dart';
 
 import 'package:smart_lock/theme/font_styles.dart'; // Import for BackdropFilter
 
@@ -41,6 +42,10 @@ class HomePageState extends State<HomePage>
   bool bluetoothUnavailable = true;
   bool fromOnboarding = false; // Nueva variable
   bool isDeviceConnected = false;
+  bool _isButtonDisabled = false;
+  bool inProcess = false;
+  Duration cooldownDuration =
+      Duration(seconds: 5); // Set your cooldown duration
 
   // Define los UUIDs como constantes para facilitar su uso y mantenimiento
   String SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
@@ -61,11 +66,15 @@ class HomePageState extends State<HomePage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isConnecting && !fromOnboarding) {
+    if (!_isConnecting) {
       // Solo intentar conectar si NO viene de Onboarding
       _attemptConnection();
     }
     fromOnboarding = false; // Reiniciar para futuras navegaciones
+    // if (fromOnboarding) {
+    //   isDeviceConnected = true;
+    //   bluetoothUnavailable = false;
+    // }
   }
 
   Future<void> _discoverAndAssignCharacteristics() async {
@@ -85,9 +94,23 @@ class HomePageState extends State<HomePage>
               await _statusCharacteristic!.setNotifyValue(true);
               _statusCharacteristic!.value.listen((value) {
                 String lockState = String.fromCharCodes(value).trim();
-                print('Estado recibido: $lockState');
+                print('Estado recibidoaa: $lockState');
                 setState(() {
-                  _locked = (lockState == 'On');
+                  if (lockState == 'process') {
+                    setState(() {
+                      inProcess = true;
+                    });
+                    Future.delayed(Duration(seconds: 3), () {
+                      setState(() {
+                        inProcess = false;
+                      });
+                    });
+                  } else {
+                    setState(() {
+                      _locked = (lockState == 'On');
+                      inProcess = false;
+                    });
+                  }
                 });
               });
               print("Status Characteristic found and notification set");
@@ -178,13 +201,13 @@ class HomePageState extends State<HomePage>
 
     if (connected) {
       await _discoverAndAssignCharacteristics();
-      _showConnectionDialog('Éxito', 'Conectado al dispositivo.');
+      //_showConnectionDialog('Éxito', 'Conectado al dispositivo.');
       setState(() {
         isDeviceConnected = true;
         bluetoothUnavailable = false;
       });
     } else {
-      _showConnectionDialog('Error', 'No se pudo conectar al dispositivo.');
+      //_showConnectionDialog('Error', 'No se pudo conectar al dispositivo.');
       setState(() {
         bluetoothUnavailable = true;
       });
@@ -219,7 +242,7 @@ class HomePageState extends State<HomePage>
     try {
       // Start scanning for devices with a 1-second timeout
       await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 1),
+        timeout: const Duration(seconds: 5),
         withNames: ["Lock32"], // Filter by device name
       );
 
@@ -282,7 +305,7 @@ class HomePageState extends State<HomePage>
       });
 
       // Wait 15 seconds to allow the device to connect
-      await Future.delayed(const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 3));
 
       if (!isDeviceConnected) {
         await FlutterBluePlus.stopScan();
@@ -418,16 +441,13 @@ class HomePageState extends State<HomePage>
         isAuthenticating = false;
       });
     } catch (e) {
-      setState(() {
-        isAuthenticating = false;
-      });
+      if (mounted) {
+        setState(() {
+          isAuthenticating = false;
+        });
+      }
       print(e);
     }
-  }
-
-  Future<void> clearAllPreferences() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
   }
 
   Future<void> _writeCharacteristic(String value) async {
@@ -447,18 +467,24 @@ class HomePageState extends State<HomePage>
               backgroundColor: Theme.of(context).colorScheme.secondary,
               title: Text(
                 "Smart Lock",
-                style: TextStyles.heading1,
+                style: TextStyles.heading1(context),
               ),
               centerTitle: true,
               leading: IconButton(
                 onPressed: _attemptConnection,
                 icon: Icon(Icons.wifi_tethering),
-                color: bluetoothUnavailable ? Colors.red : Colors.green,
+                color: !isDeviceConnected ? Colors.red : Colors.green,
               ),
               actions: [
                 IconButton(
                   onPressed: () {
-                    Navigator.of(context).pushNamed('/settings');
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SettingsPage(
+                            statusCharacteristic: _commandCharacteristic),
+                      ),
+                    );
                   },
                   icon: const Icon(Icons.settings_outlined),
                 )
@@ -470,133 +496,192 @@ class HomePageState extends State<HomePage>
           // Main content
           Visibility(
             visible: isAuthenticated,
-            child: Center(
-              child: GestureDetector(
-                onTapDown: (_) {
-                  setState(() {
-                    _isButtonPressed = true;
-                    _scale = 0.9;
-                  });
-                },
-                onTapUp: (_) {
-                  setState(() {
-                    _isButtonPressed = false;
-                    _scale = 1.0;
-                    _locked = !_locked;
-                    _handleLockToggle(); // Handle the lock toggle action
-                  });
-                },
-                onTapCancel: () {
-                  setState(() {
-                    _isButtonPressed = false;
-                    _scale = 1.0;
-                  });
-                },
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Transform.scale(
-                      scale: _scale,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        switchInCurve: Curves.easeIn,
-                        switchOutCurve: Curves.bounceIn,
-                        transitionBuilder:
-                            (Widget child, Animation<double> animation) {
-                          HapticFeedback.heavyImpact();
-                          return ScaleTransition(
-                            scale: animation,
-                            child: child,
-                          );
-                        },
-                        child: Image.asset(
-                          _locked
-                              ? 'lib/assets/locked.png'
-                              : 'lib/assets/unlocked.png',
-                          key: ValueKey<bool>(_locked),
-                          width: 150,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Center(
+                  child: Column(
+                    children: [
+                      AbsorbPointer(
+                        absorbing: !isDeviceConnected || inProcess,
+                        child: GestureDetector(
+                          onTapDown: (_) {
+                            setState(() {
+                              _isButtonPressed = true;
+                              _scale = 0.9;
+                            });
+                          },
+                          onTapUp: (_) {
+                            setState(() {
+                              _isButtonPressed = false;
+                              _scale = 1.0;
+                              inProcess = true;
+                              _locked = !_locked;
+                              _handleLockToggle(); // Handle the lock toggle action
+                            });
+                          },
+                          onTapCancel: () {
+                            setState(() {
+                              _isButtonPressed = false;
+                              _scale = 1.0;
+                            });
+                          },
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Transform.scale(
+                                scale: _scale,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 300),
+                                  switchInCurve: Curves.easeIn,
+                                  switchOutCurve: Curves.bounceIn,
+                                  transitionBuilder: (Widget child,
+                                      Animation<double> animation) {
+                                    HapticFeedback.mediumImpact();
+                                    return ScaleTransition(
+                                      scale: animation,
+                                      child: child,
+                                    );
+                                  },
+                                  child: Image.asset(
+                                    (inProcess || !isDeviceConnected)
+                                        ? 'lib/assets/unavailable.png'
+                                        : (_locked
+                                            ? 'lib/assets/locked.png'
+                                            : 'lib/assets/unlocked.png'),
+                                    width: 150,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                (inProcess)
+                                    ? "En proceso"
+                                    : !isDeviceConnected
+                                        ? "No disponible"
+                                        : (_locked
+                                            ? "Bloqueado"
+                                            : "Desbloqueado"),
+                                style: TextStyles.heading1(context),
+                              ),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                child: Text(
+                                  (inProcess)
+                                      ? "En proceso de cambio de estado."
+                                      : !isDeviceConnected
+                                          ? "No se encontró la cerradura en el rango Bluetooth. Asegurate de que la cerradura y el Bluetooth de tu dispositivo esten encendidos."
+                                          : (_locked
+                                              ? "Mantener pulsado para desbloquear"
+                                              : "Mantener pulsado para bloquear"),
+                                  style: TextStyles.normalText(context),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _locked ? "Bloqueado" : "Desbloqueado",
-                      style: TextStyles.heading1,
-                    ),
-                    Text(
-                      _locked
-                          ? "Mantener pulsado para desbloquear"
-                          : "Mantener pulsado para bloquear",
-                      style: TextStyles.normalText,
-                    ),
-                    const SizedBox(height: 12),
-                    _selectedIndex == 0 //bt is selected
-                        ? TextButton.icon(
-                            icon: const Icon(Icons.add_card_rounded),
-                            style: TextButton.styleFrom(
-                              textStyle: TextStyles.normalText,
-                              foregroundColor: Colors.white,
-                              backgroundColor:
-                                  Colors.deepPurple, // Sets the text color
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16.0,
-                                  vertical: 12.0), // Adjust padding if needed
-                            ),
-                            onPressed: () async {
-                              await _writeCharacteristic("a");
+                      const SizedBox(height: 12),
+                      (_selectedIndex == 0 &&
+                              isDeviceConnected) //bt is selected
+                          ? Visibility(
+                              visible: isDeviceConnected,
+                              child: TextButton.icon(
+                                icon: const Icon(Icons.add_card_rounded),
+                                style: TextButton.styleFrom(
+                                  textStyle: TextStyles.normalText(context),
+                                  foregroundColor: Colors.white,
+                                  backgroundColor:
+                                      Colors.deepPurple, // Sets the text color
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16.0,
+                                      vertical:
+                                          12.0), // Adjust padding if needed
+                                ),
+                                onPressed: () async {
+                                  await _writeCharacteristic("a");
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: const Text(
+                                          'Acerca la tarjeta a la cerradura'),
+                                      duration: const Duration(seconds: 5),
+                                    ),
+                                  );
+                                },
+                                label: const Text("Añadir Tarjeta RFID"),
+                              ))
+                          : (_selectedIndex == 0 && !isDeviceConnected)
+                              ? TextButton.icon(
+                                  icon: const Icon(Icons.refresh),
+                                  style: TextButton.styleFrom(
+                                    textStyle: TextStyles.normalText(context),
+                                    foregroundColor: Colors.white,
+                                    backgroundColor:
+                                        Colors.red, // Sets the text color
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16.0,
+                                        vertical:
+                                            12.0), // Adjust padding if needed
+                                  ),
+                                  onPressed: () {
+                                    _attemptConnection();
+                                  },
+                                  label: const Text("Reintentar conexión"),
+                                )
+                              : const SizedBox.shrink(),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Center(
+                  child: Column(
+                    children: [
+                      SegmentedButton<int>(
+                        showSelectedIcon: false,
+                        segments: [
+                          ButtonSegment<int>(
+                              value: 0,
+                              label: const Icon(Icons.bluetooth),
+                              enabled:
+                                  bluetoothUnavailable || isDeviceConnected),
+                          const ButtonSegment<int>(
+                            value: 1,
+                            label: Icon(Icons.wifi),
+                          ),
+                        ],
+                        selected: {_selectedIndex},
+                        onSelectionChanged: (Set<int> newSelection) {
+                          setState(() {
+                            _selectedIndex = newSelection.first;
+                          });
+                        },
+                        style: ButtonStyle(
+                          backgroundColor:
+                              WidgetStateProperty.resolveWith<Color?>(
+                            (Set<WidgetState> states) {
+                              if (states.contains(WidgetState.selected)) {
+                                return Colors
+                                    .deepPurple; // Selected background color
+                              }
+                              return null; // Default background color
                             },
-                            label: const Text("Añadir Tarjeta RFID"),
-                          )
-                        : const SizedBox.shrink(),
-                    const SizedBox(height: 12),
-                    SegmentedButton<int>(
-                      showSelectedIcon: false,
-                      segments: [
-                        ButtonSegment<int>(
-                            value: 0,
-                            label: const Icon(Icons.bluetooth),
-                            enabled: bluetoothUnavailable || isDeviceConnected),
-                        const ButtonSegment<int>(
-                          value: 1,
-                          label: Icon(Icons.wifi),
-                        ),
-                      ],
-                      selected: {_selectedIndex},
-                      onSelectionChanged: (Set<int> newSelection) {
-                        setState(() {
-                          _selectedIndex = newSelection.first;
-                        });
-                      },
-                      style: ButtonStyle(
-                        backgroundColor:
-                            WidgetStateProperty.resolveWith<Color?>(
-                          (Set<WidgetState> states) {
+                          ),
+                          foregroundColor:
+                              WidgetStateProperty.resolveWith<Color?>((states) {
                             if (states.contains(WidgetState.selected)) {
                               return Colors
-                                  .deepPurple; // Selected background color
+                                  .white; // Set icon color to white when selected
                             }
-                            return null; // Default background color
-                          },
+                            return null; // Default icon color
+                          }),
                         ),
-                        foregroundColor:
-                            WidgetStateProperty.resolveWith<Color?>((states) {
-                          if (states.contains(WidgetState.selected)) {
-                            return Colors
-                                .white; // Set icon color to white when selected
-                          }
-                          return null; // Default icon color
-                        }),
                       ),
-                    ),
-                    ElevatedButton(
-                      onPressed: () async {
-                        await clearAllPreferences();
-                      },
-                      child: const Text('Clear Preferences'),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
 

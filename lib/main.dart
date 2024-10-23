@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_lock/home_page.dart';
 import 'package:smart_lock/onboarding_page.dart';
@@ -24,9 +25,14 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Flutter Demo',
+      title: 'Smart Lock',
       theme: lightMode,
       darkTheme: darkMode,
       home: FutureBuilder<bool>(
@@ -47,9 +53,6 @@ class MyApp extends StatelessWidget {
           }
         },
       ),
-      routes: {
-        '/settings': (context) => SettingsPage(),
-      },
     );
   }
 }

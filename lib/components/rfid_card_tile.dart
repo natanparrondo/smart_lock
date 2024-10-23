@@ -32,12 +32,10 @@ class RfidCardTile extends StatelessWidget {
             children: [
               Text(
                 nickname,
-                style: TextStyles.normalTextBold,
+                style: TextStyles.normalText(
+                    context), // Asegúrate de pasar el contexto
               ),
-              Text(
-                ' • ID: $id',
-                style: TextStyles.normalText,
-              ),
+              Text(' • ID: $id', style: TextStyles.normalText(context)),
             ],
           ),
           IconButton(

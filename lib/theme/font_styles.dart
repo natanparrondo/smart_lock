@@ -5,15 +5,31 @@ import 'package:flutter/material.dart';
 class TextStyles {
   static const String fontFamily = 'SF-Pro';
 
-  static TextStyle heading1 = const TextStyle(
-    fontFamily: fontFamily,
-    fontSize: 24,
-    fontWeight: FontWeight.w600,
-  );
+  static TextStyle heading1(BuildContext context) {
+    return TextStyle(
+      fontFamily: fontFamily,
+      fontSize: 24,
+      fontWeight: FontWeight.w600,
+      color: Theme.of(context).colorScheme.onSurface, // Color según el tema
+    );
+  }
 
-  static TextStyle normalText =
-      TextStyle(fontFamily: fontFamily, color: Colors.white.withOpacity(0.8));
+  static TextStyle normalText(BuildContext context) {
+    return TextStyle(
+      fontFamily: fontFamily,
+      color: Theme.of(context)
+          .colorScheme
+          .onSurface
+          .withOpacity(0.8), // Texto normal según el tema
+    );
+  }
 
-  static TextStyle normalTextBold =
-      const TextStyle(fontFamily: fontFamily, color: Colors.white);
+  static TextStyle normalTextBold(BuildContext context) {
+    return TextStyle(
+      fontFamily: fontFamily,
+      color: Theme.of(context)
+          .colorScheme
+          .onSurface, // Texto normal en modo oscuro
+    );
+  }
 }
