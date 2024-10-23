@@ -1,4 +1,4 @@
-package com.example.smart_lock
+package com.sanbo.smart_lock
 
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterFragmentActivity
